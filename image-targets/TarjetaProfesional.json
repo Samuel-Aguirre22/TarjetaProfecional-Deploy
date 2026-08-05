@@ -1,0 +1,23 @@
+{
+  "type": "PLANAR",
+  "properties": {
+    "top": 125,
+    "left": 0,
+    "width": 600,
+    "height": 800,
+    "isRotated": true,
+    "originalWidth": 600,
+    "originalHeight": 1050
+  },
+  "imagePath": "image-targets/TarjetaProfesional_luminance.png",
+  "metadata": null,
+  "name": "TarjetaProfesional",
+  "resources": {
+    "originalImage": "TarjetaProfesional_original.png",
+    "croppedImage": "TarjetaProfesional_cropped.png",
+    "thumbnailImage": "TarjetaProfesional_thumbnail.png",
+    "luminanceImage": "TarjetaProfesional_luminance.png"
+  },
+  "created": 1785943650372,
+  "updated": 1785943650372
+}

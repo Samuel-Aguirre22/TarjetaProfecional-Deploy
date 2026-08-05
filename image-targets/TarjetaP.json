@@ -1,0 +1,23 @@
+{
+  "type": "PLANAR",
+  "properties": {
+    "top": 125,
+    "left": 0,
+    "width": 600,
+    "height": 800,
+    "isRotated": true,
+    "originalWidth": 600,
+    "originalHeight": 1050
+  },
+  "imagePath": "image-targets/Beige Azul Minimalista Estilista Tarjeta de Presentación (1)_luminance.png",
+  "metadata": null,
+  "name": "Beige Azul Minimalista Estilista Tarjeta de Presentación (1)",
+  "resources": {
+    "originalImage": "Beige Azul Minimalista Estilista Tarjeta de Presentación (1)_original.png",
+    "croppedImage": "Beige Azul Minimalista Estilista Tarjeta de Presentación (1)_cropped.png",
+    "thumbnailImage": "Beige Azul Minimalista Estilista Tarjeta de Presentación (1)_thumbnail.png",
+    "luminanceImage": "Beige Azul Minimalista Estilista Tarjeta de Presentación (1)_luminance.png"
+  },
+  "created": 1785943420181,
+  "updated": 1785943420181
+}
