@@ -46,6 +46,73 @@
       return;
     }
 
+    // Helper universal de prueba de toque en 3D
+    function testEntityHit(world, eid, clientX, clientY, maxDistance) {
+      try {
+        const threeState = world.three;
+        if (!threeState) return false;
+
+        const camera = threeState.activeCamera;
+        const obj = threeState.entityToObject?.get(eid);
+        const renderer = threeState.renderer;
+        const canvas = renderer?.domElement || document.querySelector("canvas");
+
+        if (!camera || !obj || !canvas || obj.visible === false) return false;
+
+        const rect = canvas.getBoundingClientRect();
+        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+        // 1. Raycast nativo de Three.js
+        const Vector3Class = camera.position?.constructor;
+        if (Vector3Class && camera.getWorldPosition) {
+          const origin = new Vector3Class();
+          camera.getWorldPosition(origin);
+
+          const target = new Vector3Class(ndcX, ndcY, 0.5);
+          if (target.unproject) {
+            target.unproject(camera);
+            const direction = target.sub(origin).normalize();
+
+            const raycaster = {
+              ray: { origin, direction },
+              near: 0.01,
+              far: 2000,
+              camera: camera
+            };
+
+            const intersects = [];
+            obj.raycast(raycaster, intersects);
+            if (intersects && intersects.length > 0) {
+              return true;
+            }
+          }
+        }
+
+        // 2. Proyeccion 3D a 2D como respaldo
+        if (Vector3Class) {
+          const worldPos = new Vector3Class();
+          if (obj.getWorldPosition) {
+            obj.getWorldPosition(worldPos);
+          }
+          const screenPos = new Vector3Class(worldPos.x, worldPos.y, worldPos.z);
+          if (camera.project) {
+            camera.project(screenPos);
+            if (screenPos.z < 1 && screenPos.z > -1) {
+              const screenX = ((screenPos.x + 1) / 2) * rect.width + rect.left;
+              const screenY = ((-screenPos.y + 1) / 2) * rect.height + rect.top;
+              if (Math.hypot(screenX - clientX, screenY - clientY) < (maxDistance || 70)) {
+                return true;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Raycast] Hit test error:", err);
+      }
+      return false;
+    }
+
     // --- Component: AvatarAnimationComponent ---
     try {
       ECS.registerComponent({
@@ -90,77 +157,39 @@
               }
             };
 
-            const checkAvatarHit = (event) => {
-              try {
-                const threeState = world.three;
-                const camera = threeState?.activeCamera;
-                const obj = threeState?.entityToObject?.get(component.eid);
-                const renderer = threeState?.renderer;
-                const canvas = renderer?.domElement || document.querySelector("canvas");
-                const THREE = window.THREE;
+            const onPointerEvent = (event) => {
+              let clientX, clientY;
+              if (event.changedTouches && event.changedTouches.length > 0) {
+                clientX = event.changedTouches[0].clientX;
+                clientY = event.changedTouches[0].clientY;
+              } else if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+              } else if (typeof event.clientX === "number") {
+                clientX = event.clientX;
+                clientY = event.clientY;
+              }
 
-                if (!camera || !obj || !canvas || obj.visible === false) return;
-
-                const rect = canvas.getBoundingClientRect();
-                let clientX, clientY;
-
-                if (event.changedTouches && event.changedTouches.length > 0) {
-                  clientX = event.changedTouches[0].clientX;
-                  clientY = event.changedTouches[0].clientY;
-                } else if (event.touches && event.touches.length > 0) {
-                  clientX = event.touches[0].clientX;
-                  clientY = event.touches[0].clientY;
-                } else if (typeof event.clientX === "number") {
-                  clientX = event.clientX;
-                  clientY = event.clientY;
+              if (clientX !== undefined && clientY !== undefined) {
+                if (testEntityHit(world, component.eid, clientX, clientY, 80)) {
+                  toggleAnimation();
                 }
-
-                if (clientX === undefined || clientY === undefined) return;
-
-                // A. Raycast directo
-                if (THREE?.Raycaster && THREE?.Vector2) {
-                  const mouse = new THREE.Vector2(
-                    ((clientX - rect.left) / rect.width) * 2 - 1,
-                    -((clientY - rect.top) / rect.height) * 2 + 1
-                  );
-                  const raycaster = new THREE.Raycaster();
-                  raycaster.setFromCamera(mouse, camera);
-                  const intersects = raycaster.intersectObject(obj, true);
-                  if (intersects && intersects.length > 0) {
-                    toggleAnimation();
-                    return;
-                  }
-                }
-
-                // B. Fallback de proyeccion de pantalla
-                let wx = 0, wy = 0, wz = 0;
-                if (obj.getWorldPosition) {
-                  const posVec = { x: 0, y: 0, z: 0 };
-                  obj.getWorldPosition(posVec);
-                  wx = posVec.x; wy = posVec.y; wz = posVec.z;
-                } else if (obj.matrixWorld) {
-                  wx = obj.matrixWorld.elements[12];
-                  wy = obj.matrixWorld.elements[13];
-                  wz = obj.matrixWorld.elements[14];
-                }
-
-                const screenPos = { x: wx, y: wy, z: wz };
-                if (camera.project) {
-                  camera.project(screenPos);
-                  if (screenPos.z < 1 && screenPos.z > -1) {
-                    const screenX = ((screenPos.x + 1) / 2) * rect.width + rect.left;
-                    const screenY = ((-screenPos.y + 1) / 2) * rect.height + rect.top;
-                    if (Math.hypot(screenX - clientX, screenY - clientY) < 80) {
-                      toggleAnimation();
-                    }
-                  }
-                }
-              } catch (hitErr) {}
+              }
             };
 
+            world.events.addListener(world.events.globalId, ECS.input.SCREEN_TOUCH_START, (event) => {
+              if (event?.target === component.eid) {
+                toggleAnimation();
+                return;
+              }
+              if (event?.position && testEntityHit(world, component.eid, event.position.x, event.position.y, 80)) {
+                toggleAnimation();
+              }
+            });
+
             const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
-            canvas.addEventListener("click", checkAvatarHit);
-            canvas.addEventListener("touchend", checkAvatarHit, { passive: true });
+            canvas.addEventListener("click", onPointerEvent);
+            canvas.addEventListener("touchend", onPointerEvent, { passive: true });
           } catch (initErr) {
             console.error("[AvatarAnimationComponent] Init error:", initErr);
           }
@@ -226,77 +255,39 @@
               window.open(targetUrl, targetWindow);
             };
 
-            const checkSocialHit = (event) => {
-              try {
-                const threeState = world.three;
-                const camera = threeState?.activeCamera;
-                const obj = threeState?.entityToObject?.get(component.eid);
-                const renderer = threeState?.renderer;
-                const canvas = renderer?.domElement || document.querySelector("canvas");
-                const THREE = window.THREE;
+            const onPointerEvent = (event) => {
+              let clientX, clientY;
+              if (event.changedTouches && event.changedTouches.length > 0) {
+                clientX = event.changedTouches[0].clientX;
+                clientY = event.changedTouches[0].clientY;
+              } else if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+              } else if (typeof event.clientX === "number") {
+                clientX = event.clientX;
+                clientY = event.clientY;
+              }
 
-                if (!camera || !obj || !canvas || obj.visible === false) return;
-
-                const rect = canvas.getBoundingClientRect();
-                let clientX, clientY;
-
-                if (event.changedTouches && event.changedTouches.length > 0) {
-                  clientX = event.changedTouches[0].clientX;
-                  clientY = event.changedTouches[0].clientY;
-                } else if (event.touches && event.touches.length > 0) {
-                  clientX = event.touches[0].clientX;
-                  clientY = event.touches[0].clientY;
-                } else if (typeof event.clientX === "number") {
-                  clientX = event.clientX;
-                  clientY = event.clientY;
+              if (clientX !== undefined && clientY !== undefined) {
+                if (testEntityHit(world, component.eid, clientX, clientY, 70)) {
+                  openLink();
                 }
-
-                if (clientX === undefined || clientY === undefined) return;
-
-                // A. Raycast directo
-                if (THREE?.Raycaster && THREE?.Vector2) {
-                  const mouse = new THREE.Vector2(
-                    ((clientX - rect.left) / rect.width) * 2 - 1,
-                    -((clientY - rect.top) / rect.height) * 2 + 1
-                  );
-                  const raycaster = new THREE.Raycaster();
-                  raycaster.setFromCamera(mouse, camera);
-                  const intersects = raycaster.intersectObject(obj, true);
-                  if (intersects && intersects.length > 0) {
-                    openLink();
-                    return;
-                  }
-                }
-
-                // B. Fallback de proyeccion de pantalla
-                let wx = 0, wy = 0, wz = 0;
-                if (obj.getWorldPosition) {
-                  const posVec = { x: 0, y: 0, z: 0 };
-                  obj.getWorldPosition(posVec);
-                  wx = posVec.x; wy = posVec.y; wz = posVec.z;
-                } else if (obj.matrixWorld) {
-                  wx = obj.matrixWorld.elements[12];
-                  wy = obj.matrixWorld.elements[13];
-                  wz = obj.matrixWorld.elements[14];
-                }
-
-                const screenPos = { x: wx, y: wy, z: wz };
-                if (camera.project) {
-                  camera.project(screenPos);
-                  if (screenPos.z < 1 && screenPos.z > -1) {
-                    const screenX = ((screenPos.x + 1) / 2) * rect.width + rect.left;
-                    const screenY = ((-screenPos.y + 1) / 2) * rect.height + rect.top;
-                    if (Math.hypot(screenX - clientX, screenY - clientY) < 65) {
-                      openLink();
-                    }
-                  }
-                }
-              } catch (hitErr) {}
+              }
             };
 
+            world.events.addListener(world.events.globalId, ECS.input.SCREEN_TOUCH_START, (event) => {
+              if (event?.target === component.eid) {
+                openLink();
+                return;
+              }
+              if (event?.position && testEntityHit(world, component.eid, event.position.x, event.position.y, 70)) {
+                openLink();
+              }
+            });
+
             const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
-            canvas.addEventListener("click", checkSocialHit);
-            canvas.addEventListener("touchend", checkSocialHit, { passive: true });
+            canvas.addEventListener("click", onPointerEvent);
+            canvas.addEventListener("touchend", onPointerEvent, { passive: true });
           } catch (initErr) {
             console.error("[LinkOpenerComponent] Init error:", initErr);
           }
@@ -390,7 +381,7 @@
                 await vid.play();
                 component.data.isPlaying = true;
                 updateUiState(true);
-                console.log("[VideoControlComponent] Video reproduciondose con sonido");
+                console.log("[VideoControlComponent] Video reproduciendose con sonido");
               } catch (error) {
                 console.warn("[VideoControlComponent] Autoplay seguro...", error);
                 try {
