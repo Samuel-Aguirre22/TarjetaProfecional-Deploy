@@ -46,75 +46,153 @@
       return;
     }
 
-    // Helper universal de prueba de toque en 3D
-    function testEntityHit(world, eid, clientX, clientY, maxDistance) {
+    // Registro global de enlaces y pedestales
+    const activePedestals = new Map();
+    let pedestalListenerAttached = false;
+    let lastGlobalTouchTime = 0;
+
+    function getMeshDistance(camera, obj, clientX, clientY, canvasRect) {
+      let minDistance = Infinity;
+      let hasMeshes = false;
       try {
-        const threeState = world.three;
-        if (!threeState) return false;
+        obj.traverse((child) => {
+          if (child.isMesh && child.geometry) {
+            hasMeshes = true;
+            if (!child.geometry.boundingSphere) {
+              child.geometry.computeBoundingSphere();
+            }
+            if (child.geometry.boundingSphere) {
+              const center = child.geometry.boundingSphere.center.clone();
+              center.applyMatrix4(child.matrixWorld);
 
-        const camera = threeState.activeCamera;
-        const obj = threeState.entityToObject?.get(eid);
-        const renderer = threeState.renderer;
-        const canvas = renderer?.domElement || document.querySelector("canvas");
-
-        if (!camera || !obj || !canvas || obj.visible === false) return false;
-
-        const rect = canvas.getBoundingClientRect();
-        const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-        // 1. Raycast nativo de Three.js
-        const Vector3Class = camera.position?.constructor;
-        if (Vector3Class && camera.getWorldPosition) {
-          const origin = new Vector3Class();
-          camera.getWorldPosition(origin);
-
-          const target = new Vector3Class(ndcX, ndcY, 0.5);
-          if (target.unproject) {
-            target.unproject(camera);
-            const direction = target.sub(origin).normalize();
-
-            const raycaster = {
-              ray: { origin, direction },
-              near: 0.01,
-              far: 2000,
-              camera: camera
-            };
-
-            const intersects = [];
-            obj.raycast(raycaster, intersects);
-            if (intersects && intersects.length > 0) {
-              return true;
+              if (camera.project) {
+                const screenPoint = center.clone();
+                camera.project(screenPoint);
+                if (screenPoint.z > -1 && screenPoint.z < 1) {
+                  const screenX = ((screenPoint.x + 1) / 2) * canvasRect.width + canvasRect.left;
+                  const screenY = ((-screenPoint.y + 1) / 2) * canvasRect.height + canvasRect.top;
+                  const d = Math.hypot(screenX - clientX, screenY - clientY);
+                  if (d < minDistance) {
+                    minDistance = d;
+                  }
+                }
+              }
             }
           }
-        }
+        });
 
-        // 2. Proyeccion 3D a 2D como respaldo
-        if (Vector3Class) {
-          const worldPos = new Vector3Class();
-          if (obj.getWorldPosition) {
-            obj.getWorldPosition(worldPos);
-          }
-          const screenPos = new Vector3Class(worldPos.x, worldPos.y, worldPos.z);
-          if (camera.project) {
-            camera.project(screenPos);
-            if (screenPos.z < 1 && screenPos.z > -1) {
-              const screenX = ((screenPos.x + 1) / 2) * rect.width + rect.left;
-              const screenY = ((-screenPos.y + 1) / 2) * rect.height + rect.top;
-              if (Math.hypot(screenX - clientX, screenY - clientY) < (maxDistance || 70)) {
-                return true;
+        if (!hasMeshes || minDistance === Infinity) {
+          const Vector3Class = camera.position?.constructor;
+          if (Vector3Class) {
+            const worldPos = new Vector3Class();
+            if (obj.getWorldPosition) obj.getWorldPosition(worldPos);
+            else if (obj.matrixWorld) worldPos.setFromMatrixPosition(obj.matrixWorld);
+            if (camera.project) {
+              const screenPoint = worldPos.clone();
+              camera.project(screenPoint);
+              if (screenPoint.z > -1 && screenPoint.z < 1) {
+                const screenX = ((screenPoint.x + 1) / 2) * canvasRect.width + canvasRect.left;
+                const screenY = ((-screenPoint.y + 1) / 2) * canvasRect.height + canvasRect.top;
+                minDistance = Math.hypot(screenX - clientX, screenY - clientY);
               }
             }
           }
         }
-      } catch (err) {
-        console.warn("[Raycast] Hit test error:", err);
+      } catch (err) {}
+      return minDistance;
+    }
+
+    function handleGlobalTap(world, clientX, clientY) {
+      const now = Date.now();
+      if (now - lastGlobalTouchTime < 500) return;
+      lastGlobalTouchTime = now;
+
+      const threeState = world.three;
+      if (!threeState) return;
+
+      const camera = threeState.activeCamera;
+      const renderer = threeState.renderer;
+      const canvas = renderer?.domElement || document.querySelector("canvas");
+      if (!camera || !canvas) return;
+
+      const canvasRect = canvas.getBoundingClientRect();
+      let closestEid = null;
+      let shortestDistance = Infinity;
+      const maxTapRadius = 120; // Radio amplio de 120px para dedos en pantalla
+
+      for (const eid of activePedestals.keys()) {
+        const obj = threeState.entityToObject?.get(eid);
+        if (!obj || obj.visible === false) continue;
+
+        const dist = getMeshDistance(camera, obj, clientX, clientY, canvasRect);
+        if (dist < shortestDistance && dist <= maxTapRadius) {
+          shortestDistance = dist;
+          closestEid = eid;
+        }
       }
-      return false;
+
+      if (closestEid) {
+        const info = activePedestals.get(closestEid);
+        if (info && info.url) {
+          console.log(`[LinkOpenerComponent] Pedestal ${closestEid} tocado (${Math.round(shortestDistance)}px). Abriendo: ${info.url}`);
+          window.open(info.url, info.target || "_blank");
+        }
+      }
+    }
+
+    // --- Component: LinkOpenerComponent ---
+    try {
+      ECS.registerComponent({
+        name: "LinkOpenerComponent",
+        schema: {
+          url: ECS.string,
+          target: ECS.string
+        },
+        schemaDefaults: {
+          url: "",
+          target: "_blank"
+        },
+        add: (world, component) => {
+          try {
+            const url = (component.schema.url || "").trim();
+            const target = component.schema.target || "_blank";
+            activePedestals.set(component.eid, { url, target });
+            console.log(`[LinkOpenerComponent] Registrado pedestal ${component.eid} con URL: ${url}`);
+
+            if (!pedestalListenerAttached) {
+              pedestalListenerAttached = true;
+              world.events.addListener(world.events.globalId, ECS.input.SCREEN_TOUCH_START, (event) => {
+                if (event?.position) {
+                  handleGlobalTap(world, event.position.x, event.position.y);
+                }
+              });
+
+              const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
+              canvas.addEventListener("touchend", (e) => {
+                if (e.changedTouches && e.changedTouches.length > 0) {
+                  handleGlobalTap(world, e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                }
+              }, { passive: true });
+
+              canvas.addEventListener("click", (e) => {
+                handleGlobalTap(world, e.clientX, e.clientY);
+              });
+            }
+          } catch (initErr) {
+            console.error("[LinkOpenerComponent] Init error:", initErr);
+          }
+        },
+        remove: (world, component) => {
+          activePedestals.delete(component.eid);
+        }
+      });
+    } catch (e) {
+      console.error("Error registering LinkOpenerComponent:", e);
     }
 
     // --- Component: AvatarAnimationComponent ---
     try {
+      let lastAvatarToggle = 0;
       ECS.registerComponent({
         name: "AvatarAnimationComponent",
         schema: {
@@ -131,7 +209,6 @@
         add: (world, component) => {
           try {
             component.data.currentClipIndex = 0;
-            let lastToggleTime = 0;
             const clips = [
               component.schema.clip1 || "Armature.001|mixamo.com|Layer0",
               component.schema.clip2 || "Armature|mixamo.com|Layer0"
@@ -139,8 +216,8 @@
 
             const toggleAnimation = () => {
               const now = Date.now();
-              if (now - lastToggleTime < 600) return;
-              lastToggleTime = now;
+              if (now - lastAvatarToggle < 500) return;
+              lastAvatarToggle = now;
               component.data.currentClipIndex = (component.data.currentClipIndex + 1) % clips.length;
               const nextClip = clips[component.data.currentClipIndex];
               console.log("[AvatarAnimationComponent] Alternando animacion a:", nextClip);
@@ -157,23 +234,18 @@
               }
             };
 
-            const onPointerEvent = (event) => {
-              let clientX, clientY;
-              if (event.changedTouches && event.changedTouches.length > 0) {
-                clientX = event.changedTouches[0].clientX;
-                clientY = event.changedTouches[0].clientY;
-              } else if (event.touches && event.touches.length > 0) {
-                clientX = event.touches[0].clientX;
-                clientY = event.touches[0].clientY;
-              } else if (typeof event.clientX === "number") {
-                clientX = event.clientX;
-                clientY = event.clientY;
-              }
+            const checkAvatarTouch = (clientX, clientY) => {
+              const threeState = world.three;
+              if (!threeState) return;
+              const camera = threeState.activeCamera;
+              const obj = threeState.entityToObject?.get(component.eid);
+              const canvas = threeState.renderer?.domElement || document.querySelector("canvas");
+              if (!camera || !obj || !canvas || obj.visible === false) return;
 
-              if (clientX !== undefined && clientY !== undefined) {
-                if (testEntityHit(world, component.eid, clientX, clientY, 80)) {
-                  toggleAnimation();
-                }
+              const canvasRect = canvas.getBoundingClientRect();
+              const dist = getMeshDistance(camera, obj, clientX, clientY, canvasRect);
+              if (dist <= 120) {
+                toggleAnimation();
               }
             };
 
@@ -182,14 +254,21 @@
                 toggleAnimation();
                 return;
               }
-              if (event?.position && testEntityHit(world, component.eid, event.position.x, event.position.y, 80)) {
-                toggleAnimation();
+              if (event?.position) {
+                checkAvatarTouch(event.position.x, event.position.y);
               }
             });
 
             const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
-            canvas.addEventListener("click", onPointerEvent);
-            canvas.addEventListener("touchend", onPointerEvent, { passive: true });
+            canvas.addEventListener("touchend", (e) => {
+              if (e.changedTouches && e.changedTouches.length > 0) {
+                checkAvatarTouch(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+              }
+            }, { passive: true });
+
+            canvas.addEventListener("click", (e) => {
+              checkAvatarTouch(e.clientX, e.clientY);
+            });
           } catch (initErr) {
             console.error("[AvatarAnimationComponent] Init error:", initErr);
           }
@@ -228,74 +307,6 @@
         add: () => { console.log("Component attached."); }
       });
     } catch (e) {}
-
-    // --- Component: LinkOpenerComponent ---
-    try {
-      ECS.registerComponent({
-        name: "LinkOpenerComponent",
-        schema: {
-          url: ECS.string,
-          target: ECS.string
-        },
-        schemaDefaults: {
-          url: "",
-          target: "_blank"
-        },
-        add: (world, component) => {
-          try {
-            let lastOpenTime = 0;
-            const openLink = () => {
-              const now = Date.now();
-              if (now - lastOpenTime < 600) return;
-              lastOpenTime = now;
-              const targetUrl = (component.schema.url || "").trim();
-              if (!targetUrl) return;
-              console.log("[LinkOpenerComponent] Abriendo URL:", targetUrl);
-              const targetWindow = component.schema.target || "_blank";
-              window.open(targetUrl, targetWindow);
-            };
-
-            const onPointerEvent = (event) => {
-              let clientX, clientY;
-              if (event.changedTouches && event.changedTouches.length > 0) {
-                clientX = event.changedTouches[0].clientX;
-                clientY = event.changedTouches[0].clientY;
-              } else if (event.touches && event.touches.length > 0) {
-                clientX = event.touches[0].clientX;
-                clientY = event.touches[0].clientY;
-              } else if (typeof event.clientX === "number") {
-                clientX = event.clientX;
-                clientY = event.clientY;
-              }
-
-              if (clientX !== undefined && clientY !== undefined) {
-                if (testEntityHit(world, component.eid, clientX, clientY, 70)) {
-                  openLink();
-                }
-              }
-            };
-
-            world.events.addListener(world.events.globalId, ECS.input.SCREEN_TOUCH_START, (event) => {
-              if (event?.target === component.eid) {
-                openLink();
-                return;
-              }
-              if (event?.position && testEntityHit(world, component.eid, event.position.x, event.position.y, 70)) {
-                openLink();
-              }
-            });
-
-            const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
-            canvas.addEventListener("click", onPointerEvent);
-            canvas.addEventListener("touchend", onPointerEvent, { passive: true });
-          } catch (initErr) {
-            console.error("[LinkOpenerComponent] Init error:", initErr);
-          }
-        }
-      });
-    } catch (e) {
-      console.error("Error registering LinkOpenerComponent:", e);
-    }
 
     // --- Component: VideoControlComponent ---
     try {
