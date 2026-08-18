@@ -46,81 +46,45 @@
       return;
     }
 
-    const URL_MAP = {
-      instagram: "https://www.instagram.com/samuel_aguirre22?igsh=eWRubXNxZW0wZW00",
-      linkedin: "https://www.linkedin.com/in/samuel-aguirre-10404737a?utm_source=share_via&utm_content=profile&utm_medium=member_android",
-      web: "https://legendary-sopapillas-2de101.netlify.app/",
-      whatsapp: "https://wa.me/573017384737"
+    const LOGO_CONFIG = {
+      instagram: {
+        name: "Instagram",
+        url: "https://www.instagram.com/samuel_aguirre22?igsh=eWRubXNxZW0wZW00"
+      },
+      linkedin: {
+        name: "LinkedIn",
+        url: "https://www.linkedin.com/in/samuel-aguirre-10404737a?utm_source=share_via&utm_content=profile&utm_medium=member_android"
+      },
+      web: {
+        name: "Web Portafolio",
+        url: "https://legendary-sopapillas-2de101.netlify.app/"
+      },
+      whatsapp: {
+        name: "WhatsApp",
+        url: "https://wa.me/573017384737"
+      }
     };
 
-    const activeEntityUrls = new Map();
-    let lastUrlTriggerTime = 0;
+    const logoEntities = new Map();
+    let lastTapTime = 0;
 
-    function resolveUrlFromEntityName(nameStr, customUrl) {
-      if (customUrl && customUrl.trim()) {
-        return customUrl.trim();
-      }
-      const str = (nameStr || "").toLowerCase();
-
-      // 1. Instagram con prioridad 1
-      if (
-        str.includes("instagram") ||
-        str.includes("insta") ||
-        str.includes("ig") ||
-        str.includes("pedestal.glb 2") ||
-        str.includes("pedestal 2")
-      ) {
-        return URL_MAP.instagram;
-      }
-
-      // 2. LinkedIn con prioridad 2
-      if (
-        str.includes("linkedin") ||
-        str.includes("linkeding") ||
-        str.includes("inportafolio") ||
-        str.includes("pedestal.glb 4") ||
-        str.includes("pedestal 4")
-      ) {
-        return URL_MAP.linkedin;
-      }
-
-      // 3. Web / Portafolio Netlify con prioridad 3
-      if (
-        str.includes("webportafolio") ||
-        str.includes("web") ||
-        str.includes("netlify") ||
-        str.includes("sopapillas") ||
-        str.includes("pedestal.glb 3") ||
-        str.includes("pedestal 3") ||
-        (str.includes("portafolio") && !str.includes("whatsapp") && !str.includes("whats"))
-      ) {
-        return URL_MAP.web;
-      }
-
-      // 4. WhatsApp con prioridad 4
-      if (
-        str.includes("whatsapp") ||
-        str.includes("whats") ||
-        str.includes("wa.me") ||
-        str.includes("wsp") ||
-        str.includes("pedestal.glb 1") ||
-        str.includes("pedestal 1")
-      ) {
-        return URL_MAP.whatsapp;
-      }
-
-      return null;
-    }
-
-    function triggerOpenUrl(url, target = "_blank") {
+    function openTargetUrl(url) {
       const now = Date.now();
-      if (now - lastUrlTriggerTime < 500) return;
-      lastUrlTriggerTime = now;
-      console.log("[open-url-button] Abriendo URL:", url);
-      window.open(url, target);
+      if (now - lastTapTime < 600) return;
+      lastTapTime = now;
+      console.log("[open-url-button] Abriendo enlace:", url);
+
+      try {
+        const newWindow = window.open(url, "_blank");
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === "undefined") {
+          window.location.href = url;
+        }
+      } catch (err) {
+        window.location.href = url;
+      }
     }
 
-    function calculateMeshScreenDistance(camera, obj, clientX, clientY, canvasRect) {
+    function getLogoScreenDistance(camera, obj, clientX, clientY, canvasRect) {
       let minDistance = Infinity;
       let hasMeshes = false;
       try {
@@ -167,11 +131,24 @@
             }
           }
         }
-      } catch (err) {}
+      } catch (e) {}
       return minDistance;
     }
 
-    function handleScreenInteraction(world, clientX, clientY) {
+    function animateIconTap(obj) {
+      try {
+        if (!obj || !obj.scale) return;
+        const originalScale = { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z };
+        obj.scale.set(originalScale.x * 1.25, originalScale.y * 1.25, originalScale.z * 1.25);
+        setTimeout(() => {
+          if (obj && obj.scale) {
+            obj.scale.set(originalScale.x, originalScale.y, originalScale.z);
+          }
+        }, 200);
+      } catch (e) {}
+    }
+
+    function handleTouchOnLogos(world, clientX, clientY) {
       const threeState = world.three;
       if (!threeState) return;
 
@@ -181,60 +158,29 @@
       if (!camera || !canvas) return;
 
       const canvasRect = canvas.getBoundingClientRect();
-      let closestEntityData = null;
-      let minDistance = 130;
+      let closestEid = null;
+      let shortestDistance = Infinity;
+      const tapThreshold = 120;
 
-      const entityToObject = threeState.entityToObject;
-      if (!entityToObject) return;
-
-      for (const [eid, obj] of entityToObject.entries()) {
+      for (const [eid, logoData] of logoEntities.entries()) {
+        const obj = threeState.entityToObject?.get(eid);
         if (!obj || obj.visible === false) continue;
 
-        let entityName = "";
-        try {
-          if (ECS.Name && ECS.Name.has(world, eid)) {
-            entityName = ECS.Name.get(world, eid).name || "";
-          }
-        } catch (e) {}
-
-        let gltfSrc = "";
-        try {
-          if (ECS.GltfModel && ECS.GltfModel.has(world, eid)) {
-            gltfSrc = ECS.GltfModel.get(world, eid).url || "";
-          }
-        } catch (e) {}
-
-        const objName = obj.name || "";
-        const identifier = `${entityName} ${gltfSrc} ${objName}`;
-
-        if (
-          identifier.toLowerCase().includes("yobailanding") ||
-          identifier.toLowerCase().includes("camera") ||
-          identifier.toLowerCase().includes("whaltercat") ||
-          identifier.toLowerCase().includes("plane")
-        ) {
-          continue;
-        }
-
-        const customUrl = activeEntityUrls.get(eid);
-        const resolvedUrl = resolveUrlFromEntityName(identifier, customUrl);
-        if (!resolvedUrl) continue;
-
-        const distance = calculateMeshScreenDistance(camera, obj, clientX, clientY, canvasRect);
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestEntityData = {
-            eid,
-            name: identifier,
-            url: resolvedUrl,
-            dist: distance
-          };
+        const distance = getLogoScreenDistance(camera, obj, clientX, clientY, canvasRect);
+        if (distance < shortestDistance && distance <= tapThreshold) {
+          shortestDistance = distance;
+          closestEid = eid;
         }
       }
 
-      if (closestEntityData && closestEntityData.url) {
-        console.log(`[open-url-button] Detectado toque en ${closestEntityData.name} (${Math.round(closestEntityData.dist)}px)`);
-        triggerOpenUrl(closestEntityData.url);
+      if (closestEid) {
+        const selectedLogo = logoEntities.get(closestEid);
+        const selectedObj = threeState.entityToObject?.get(closestEid);
+        if (selectedLogo && selectedLogo.url) {
+          console.log(`[open-url-button] Icono "${selectedLogo.key}" tocado a ${Math.round(shortestDistance)}px.`);
+          if (selectedObj) animateIconTap(selectedObj);
+          openTargetUrl(selectedLogo.url);
+        }
       }
     }
 
@@ -251,66 +197,74 @@
           target: "_blank"
         },
         add: (world, component) => {
-          const customUrl = (component.schema.url || "").trim();
-          if (customUrl) {
-            activeEntityUrls.set(component.eid, customUrl);
-          }
-          world.events.addListener(component.eid, ECS.input.UI_CLICK, () => {
-            let entityName = "";
-            try {
-              if (ECS.Name && ECS.Name.has(world, component.eid)) {
-                entityName = ECS.Name.get(world, component.eid).name || "";
-              }
-            } catch (e) {}
-            const url = resolveUrlFromEntityName(entityName, component.schema.url);
-            if (url) {
-              triggerOpenUrl(url, component.schema.target || "_blank");
+          let entityName = "";
+          try {
+            if (ECS.Name && ECS.Name.has(world, component.eid)) {
+              entityName = ECS.Name.get(world, component.eid).name || "";
             }
+          } catch (e) {}
+
+          let gltfSrc = "";
+          try {
+            if (ECS.GltfModel && ECS.GltfModel.has(world, component.eid)) {
+              gltfSrc = ECS.GltfModel.get(world, component.eid).url || "";
+            }
+          } catch (e) {}
+
+          const fullStr = `${entityName} ${gltfSrc}`.toLowerCase();
+          let key = "";
+          let url = (component.schema.url || "").trim();
+
+          if (fullStr.includes("instagram")) {
+            key = "instagram";
+            url = url || LOGO_CONFIG.instagram.url;
+          } else if (fullStr.includes("linkedin")) {
+            key = "linkedin";
+            url = url || LOGO_CONFIG.linkedin.url;
+          } else if (fullStr.includes("web")) {
+            key = "web";
+            url = url || LOGO_CONFIG.web.url;
+          } else if (fullStr.includes("whatsapp")) {
+            key = "whatsapp";
+            url = url || LOGO_CONFIG.whatsapp.url;
+          }
+
+          if (key && url) {
+            logoEntities.set(component.eid, { key, url });
+            console.log(`[open-url-button] Registrado icono "${key}" (${component.eid})`);
+          }
+
+          world.events.addListener(component.eid, ECS.input.UI_CLICK, () => {
+            if (url) openTargetUrl(url);
           });
         },
         remove: (world, component) => {
-          activeEntityUrls.delete(component.eid);
+          logoEntities.delete(component.eid);
         }
       });
 
-      let isGlobalBehaviorAttached = false;
+      let isGlobalAttached = false;
       ECS.registerComponent({
         name: "open-url-global-behavior",
         add: (world) => {
-          if (isGlobalBehaviorAttached) return;
-          isGlobalBehaviorAttached = true;
+          if (isGlobalAttached) return;
+          isGlobalAttached = true;
 
           world.events.addListener(world.events.globalId, ECS.input.SCREEN_TOUCH_START, (event) => {
             if (event?.position) {
-              handleScreenInteraction(world, event.position.x, event.position.y);
-            }
-          });
-
-          world.events.addListener(world.events.globalId, ECS.input.UI_CLICK, (event) => {
-            if (event?.target) {
-              let entityName = "";
-              try {
-                if (ECS.Name && ECS.Name.has(world, event.target)) {
-                  entityName = ECS.Name.get(world, event.target).name || "";
-                }
-              } catch (e) {}
-              const customUrl = activeEntityUrls.get(event.target);
-              const url = resolveUrlFromEntityName(entityName, customUrl);
-              if (url) {
-                triggerOpenUrl(url);
-              }
+              handleTouchOnLogos(world, event.position.x, event.position.y);
             }
           });
 
           const canvas = world.three?.renderer?.domElement || document.querySelector("canvas") || window;
           canvas.addEventListener("touchend", (e) => {
             if (e.changedTouches && e.changedTouches.length > 0) {
-              handleScreenInteraction(world, e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+              handleTouchOnLogos(world, e.changedTouches[0].clientX, e.changedTouches[0].clientY);
             }
           }, { passive: true });
 
           canvas.addEventListener("click", (e) => {
-            handleScreenInteraction(world, e.clientX, e.clientY);
+            handleTouchOnLogos(world, e.clientX, e.clientY);
           });
         }
       });
@@ -371,7 +325,7 @@
               if (!camera || !obj || !canvas || obj.visible === false) return;
 
               const canvasRect = canvas.getBoundingClientRect();
-              const dist = calculateMeshScreenDistance(camera, obj, clientX, clientY, canvasRect);
+              const dist = getLogoScreenDistance(camera, obj, clientX, clientY, canvasRect);
               if (dist <= 120) {
                 toggleAnimation();
               }
@@ -654,7 +608,7 @@
 
     // --- Scene Graph Initialization ---
     try {
-      const sceneData = JSON.parse('{"objects":{"47699d9e-18a5-4f88-a4f9-b8be92e8f74a":{"components":{},"geometry":null,"id":"47699d9e-18a5-4f88-a4f9-b8be92e8f74a","light":{"type":"ambient"},"material":null,"name":"Ambient Light","position":[10,5,5],"rotation":[0,0,0,1],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":0.4038940050501252},"a608ddd9-9379-464d-966f-5d8d8674c83c":{"camera":{"type":"perspective","xr":{"desktop":"disabled","xrCameraType":"world","headset":"disabled","phone":"AR","world":{"disableWorldTracking":true}}},"components":{},"geometry":null,"id":"a608ddd9-9379-464d-966f-5d8d8674c83c","material":null,"name":"Camera","position":[0.11021234810228797,1.7103830500121502,2.9534682386621958],"rotation":[0.0004436887233141012,0.9659425615285845,-0.25875089860082223,0.0016563336561801576],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":1.0308214152219775},"ac1989e3-3b71-49e2-a05f-e682aeb18c36":{"components":{},"geometry":null,"id":"ac1989e3-3b71-49e2-a05f-e682aeb18c36","light":{"intensity":1,"type":"directional"},"material":null,"name":"Directional Light","position":[20,50,10],"rotation":[0,0,0,1],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":0.6644431107322474},"9dc7379b-05f8-4beb-af4b-a5cf038a56c3":{"id":"9dc7379b-05f8-4beb-af4b-a5cf038a56c3","position":[0.00775452111507066,0.10883949592772793,0.03443241969513731],"rotation":[0.700909264299852,0,0,0.7132504491541805],"scale":[0.38461538461538514,0.38461538461538564,0.38461538461538564],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-avatar-anim-01":{"id":"comp-avatar-anim-01","name":"AvatarAnimationComponent","parameters":{"clip1":"Armature.001|mixamo.com|Layer0","clip2":"Armature|mixamo.com|Layer0"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/YoBailanding.glb"},"animationClip":"Armature.001|mixamo.com|Layer0","loop":true,"collider":true},"name":"YoBailanding.glb","order":2.295440257932817},"24337461-b0b2-47db-a68d-1061a6608f2a":{"id":"24337461-b0b2-47db-a68d-1061a6608f2a","position":[0,0,0],"rotation":[-0.7071067811865475,0,0,0.7071067811865476],"scale":[1.932103081440475,2.1513397123000333,1],"geometry":null,"material":null,"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{},"name":"Image Target","imageTarget":{"name":"Dmc"},"order":3.6434105978200564,"disabled":true},"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8":{"id":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","position":[0,0,0],"rotation":[-0.7071067811865475,0,0,0.7071067811865476],"scale":[2.6000000000000014,2.6000000000000014,2.6000000000000014],"geometry":null,"material":null,"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{"comp-open-url-global":{"id":"comp-open-url-global","name":"open-url-global-behavior","parameters":{}}},"name":"Image Target (1)","imageTarget":{"name":"TarjetaProfesional"},"order":5.363991776955565},"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3":{"id":"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3","position":[0,0.9144730089247948,0.5008703406106403],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[1.8461538461538463,1.1538461538461537,1.1538461538461535],"geometry":{"type":"plane","width":1,"height":1},"material":{"type":"basic","color":"#FFFFFF","textureSrc":{"type":"asset","asset":"assets/Un_vagon_llamado_deseo_1.mp4"}},"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-video-ctrl-01":{"id":"comp-video-ctrl-01","name":"VideoControlComponent","parameters":{"targetName":"TarjetaProfesional","videoSrc":"assets/Un_vagon_llamado_deseo_1.mp4"}}},"name":"Plane","order":11.062780065811888,"videoControls":{"volume":0.2},"hidden":false},"21713d56-49e9-4e3f-8d8a-b0a0f7085733":{"id":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","position":[0,-0.28556072730335924,1.2290907895080168],"rotation":[0,0,0,1],"scale":[0.19999999999999993,0.33333333333333304,0.33333333333333315],"geometry":null,"material":null,"parentId":"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3","components":{},"ui":{"type":"3d","width":100,"height":36,"background":"#bd0000","borderRadius":18,"flexDirection":"row","backgroundOpacity":1,"padding":"10","gap":"6","alignItems":"center","justifyContent":"center"},"name":"Button","order":8.636582721891168,"hidden":false},"d327f1b1-8f61-4023-a4cd-456996deb5fb":{"id":"d327f1b1-8f61-4023-a4cd-456996deb5fb","position":[-0.323,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"geometry":null,"material":null,"parentId":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","components":{},"name":"Icon","ui":{"width":16,"height":16,"image":{"type":"asset","asset":"assets/pause-button-png-31.png"},"backgroundOpacity":1,"backgroundSize":"contain"},"order":0.18712984955022477},"a298cc6d-1145-4202-a179-255438cccd27":{"id":"a298cc6d-1145-4202-a179-255438cccd27","position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"geometry":null,"material":null,"parentId":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","components":{},"name":"Text","ui":{"width":50,"height":14,"text":"Pausa","color":"#ffffff","fontSize":10,"font":{"type":"font","font":"Press Start 2p"},"verticalTextAlign":"center"},"order":1.2695086777501219},"1f71af66-4a5c-487d-9b9e-e30977b4ba60":{"id":"1f71af66-4a5c-487d-9b9e-e30977b4ba60","position":[0.9341143383423588,-0.05900518250259834,-0.0036841479705305128],"rotation":[0.6916548014520733,-0.14701576633820648,-0.14701576659219115,0.6916548015083777],"scale":[0.16023534923242233,0.16023534923242277,0.16023534923242272],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/WhalterCatparao.glb"},"animationClip":"Armature|mixamo.com","loop":true},"name":"WhalterCatparao.glb","order":9.91298056231974},"9f7911be-c2d3-4494-b00a-0bfdbb528168":{"id":"9f7911be-c2d3-4494-b00a-0bfdbb528168","position":[0.6474458328172452,-0.17162021004049322,3.810734173559221e-17],"rotation":[0.7071067811865474,0,0,0.7071067811865476],"scale":[0.38461538461538464,0.38461538461538464,0.38461538461538464],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-ped-1":{"id":"comp-open-url-ped-1","name":"open-url-button","parameters":{"url":"https://wa.me/573017384737"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 1","order":13.457810255242066},"82d25dee-400b-424e-b073-d322eec249d5":{"id":"82d25dee-400b-424e-b073-d322eec249d5","position":[0.36076923076923056,-0.3807692307692306,8.454775341376188e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-ped-2":{"id":"comp-open-url-ped-2","name":"open-url-button","parameters":{"url":"https://www.instagram.com/samuel_aguirre22?igsh=eWRubXNxZW0wZW00"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 2","order":14.577194199066478},"cefb34db-f1a9-4330-9a30-c293e7081ea3":{"id":"cefb34db-f1a9-4330-9a30-c293e7081ea3","position":[-0.3606108304774588,-0.3807320452380352,8.453949656717868e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-ped-3":{"id":"comp-open-url-ped-3","name":"open-url-button","parameters":{"url":"https://legendary-sopapillas-2de101.netlify.app/"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 3","order":16.386894735594232},"3ff6362a-77aa-4dff-9b59-1f1c0008b347":{"id":"3ff6362a-77aa-4dff-9b59-1f1c0008b347","position":[-0.650932659174738,-0.15907764183258916,3.532233213312289e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-ped-4":{"id":"comp-open-url-ped-4","name":"open-url-button","parameters":{"url":"https://www.linkedin.com/in/samuel-aguirre-10404737a?utm_source=share_via&utm_content=profile&utm_medium=member_android"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 4","order":17.941517099219258},"4673b2f0-ece2-44f8-bec2-928e6faccb72":{"id":"4673b2f0-ece2-44f8-bec2-928e6faccb72","position":[0.6516865139085489,-0.1714370471180299,1.2346844252184893e-16],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-1":{"id":"comp-open-url-logo-1","name":"open-url-button","parameters":{"url":"https://wa.me/573017384737"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/WhatsappPortafolio.glb"},"animationClip":"InstagramAction","loop":true},"name":"WhatsappPortafolio.glb","order":19.011843134639424},"3c299a20-8977-4ee1-b02f-e4801f6111a3":{"id":"3c299a20-8977-4ee1-b02f-e4801f6111a3","position":[0.36192307692307674,-0.380070862044895,8.439268440627478e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-2":{"id":"comp-open-url-logo-2","name":"open-url-button","parameters":{"url":"https://www.instagram.com/samuel_aguirre22?igsh=eWRubXNxZW0wZW00"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/InstagramPortafolio.glb"},"animationClip":"InstagramAction.001","loop":true},"name":"InstagramPortafolio.glb","order":20.9084820881096},"5299ab2c-1e4c-462e-8dc0-6c66c5461060":{"id":"5299ab2c-1e4c-462e-8dc0-6c66c5461060","position":[-0.36179993794484655,-0.37962053296809967,-0.007805122189030431],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-3":{"id":"comp-open-url-logo-3","name":"open-url-button","parameters":{"url":"https://legendary-sopapillas-2de101.netlify.app/"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/WebPortafolio.glb"},"animationClip":"InstagramAction.002","loop":true},"name":"WebPortafolio.glb","order":22.730054866147196},"e3449b1b-844e-4052-91b6-5f4e62c48d26":{"id":"e3449b1b-844e-4052-91b6-5f4e62c48d26","position":[-0.6494082347277055,-0.1649388359122672,3.662377865693394e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-4":{"id":"comp-open-url-logo-4","name":"open-url-button","parameters":{"url":"https://www.linkedin.com/in/samuel-aguirre-10404737a?utm_source=share_via&utm_content=profile&utm_medium=member_android"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/LinkedinPortafolio.glb"},"animationClip":"InstagramAction.002","loop":true},"name":"LinkedinPortafolio.glb","order":24.368432697627576},"214cee31-11c8-4ce1-bb49-6c715f1a78d9":{"id":"214cee31-11c8-4ce1-bb49-6c715f1a78d9","position":[-2.8539250092822845,1.5236108629367444,-0.8761926111013618],"rotation":[0.1191109501622727,0.379671050126133,-0.016397197487370285,0.9172750989545722],"scale":[2.3000000000000034,1.5812500764929427,1.437500076492944],"geometry":{"type":"plane","width":1,"height":1},"material":{"type":"basic","color":"#FFFFFF","textureSrc":{"type":"asset","asset":"assets/Talos.png"}},"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{},"name":"Plane (1)","order":7.1937233329494195}},"spaces":{"88453035-dc0f-486d-868a-8ff7c2fda864":{"id":"88453035-dc0f-486d-868a-8ff7c2fda864","name":"Default Space","activeCamera":"a608ddd9-9379-464d-966f-5d8d8674c83c"}},"entrySpaceId":"88453035-dc0f-486d-868a-8ff7c2fda864"}');
+      const sceneData = JSON.parse('{"objects":{"47699d9e-18a5-4f88-a4f9-b8be92e8f74a":{"components":{},"geometry":null,"id":"47699d9e-18a5-4f88-a4f9-b8be92e8f74a","light":{"type":"ambient"},"material":null,"name":"Ambient Light","position":[10,5,5],"rotation":[0,0,0,1],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":0.4038940050501252},"a608ddd9-9379-464d-966f-5d8d8674c83c":{"camera":{"type":"perspective","xr":{"desktop":"disabled","xrCameraType":"world","headset":"disabled","phone":"AR","world":{"disableWorldTracking":true}}},"components":{},"geometry":null,"id":"a608ddd9-9379-464d-966f-5d8d8674c83c","material":null,"name":"Camera","position":[0.11021234810228797,1.7103830500121502,2.9534682386621958],"rotation":[0.0004436887233141012,0.9659425615285845,-0.25875089860082223,0.0016563336561801576],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":1.0308214152219775},"ac1989e3-3b71-49e2-a05f-e682aeb18c36":{"components":{},"geometry":null,"id":"ac1989e3-3b71-49e2-a05f-e682aeb18c36","light":{"intensity":1,"type":"directional"},"material":null,"name":"Directional Light","position":[20,50,10],"rotation":[0,0,0,1],"scale":[1,1,1],"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","order":0.6644431107322474},"9dc7379b-05f8-4beb-af4b-a5cf038a56c3":{"id":"9dc7379b-05f8-4beb-af4b-a5cf038a56c3","position":[0.00775452111507066,0.10883949592772793,0.03443241969513731],"rotation":[0.700909264299852,0,0,0.7132504491541805],"scale":[0.38461538461538514,0.38461538461538564,0.38461538461538564],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-avatar-anim-01":{"id":"comp-avatar-anim-01","name":"AvatarAnimationComponent","parameters":{"clip1":"Armature.001|mixamo.com|Layer0","clip2":"Armature|mixamo.com|Layer0"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/YoBailanding.glb"},"animationClip":"Armature.001|mixamo.com|Layer0","loop":true,"collider":true},"name":"YoBailanding.glb","order":2.295440257932817},"24337461-b0b2-47db-a68d-1061a6608f2a":{"id":"24337461-b0b2-47db-a68d-1061a6608f2a","position":[0,0,0],"rotation":[-0.7071067811865475,0,0,0.7071067811865476],"scale":[1.932103081440475,2.1513397123000333,1],"geometry":null,"material":null,"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{},"name":"Image Target","imageTarget":{"name":"Dmc"},"order":3.6434105978200564,"disabled":true},"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8":{"id":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","position":[0,0,0],"rotation":[-0.7071067811865475,0,0,0.7071067811865476],"scale":[2.6000000000000014,2.6000000000000014,2.6000000000000014],"geometry":null,"material":null,"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{"comp-open-url-global":{"id":"comp-open-url-global","name":"open-url-global-behavior","parameters":{}}},"name":"Image Target (1)","imageTarget":{"name":"TarjetaProfesional"},"order":5.363991776955565},"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3":{"id":"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3","position":[0,0.9144730089247948,0.5008703406106403],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[1.8461538461538463,1.1538461538461537,1.1538461538461535],"geometry":{"type":"plane","width":1,"height":1},"material":{"type":"basic","color":"#FFFFFF","textureSrc":{"type":"asset","asset":"assets/Un_vagon_llamado_deseo_1.mp4"}},"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-video-ctrl-01":{"id":"comp-video-ctrl-01","name":"VideoControlComponent","parameters":{"targetName":"TarjetaProfesional","videoSrc":"assets/Un_vagon_llamado_deseo_1.mp4"}}},"name":"Plane","order":11.062780065811888,"videoControls":{"volume":0.2},"hidden":false},"21713d56-49e9-4e3f-8d8a-b0a0f7085733":{"id":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","position":[0,-0.28556072730335924,1.2290907895080168],"rotation":[0,0,0,1],"scale":[0.19999999999999993,0.33333333333333304,0.33333333333333315],"geometry":null,"material":null,"parentId":"0ed0800c-e667-4d35-bf03-4ceaf9f9a0f3","components":{},"ui":{"type":"3d","width":100,"height":36,"background":"#bd0000","borderRadius":18,"flexDirection":"row","backgroundOpacity":1,"padding":"10","gap":"6","alignItems":"center","justifyContent":"center"},"name":"Button","order":8.636582721891168,"hidden":false},"d327f1b1-8f61-4023-a4cd-456996deb5fb":{"id":"d327f1b1-8f61-4023-a4cd-456996deb5fb","position":[-0.323,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"geometry":null,"material":null,"parentId":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","components":{},"name":"Icon","ui":{"width":16,"height":16,"image":{"type":"asset","asset":"assets/pause-button-png-31.png"},"backgroundOpacity":1,"backgroundSize":"contain"},"order":0.18712984955022477},"a298cc6d-1145-4202-a179-255438cccd27":{"id":"a298cc6d-1145-4202-a179-255438cccd27","position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"geometry":null,"material":null,"parentId":"21713d56-49e9-4e3f-8d8a-b0a0f7085733","components":{},"name":"Text","ui":{"width":50,"height":14,"text":"Pausa","color":"#ffffff","fontSize":10,"font":{"type":"font","font":"Press Start 2p"},"verticalTextAlign":"center"},"order":1.2695086777501219},"1f71af66-4a5c-487d-9b9e-e30977b4ba60":{"id":"1f71af66-4a5c-487d-9b9e-e30977b4ba60","position":[0.9341143383423588,-0.05900518250259834,-0.0036841479705305128],"rotation":[0.6916548014520733,-0.14701576633820648,-0.14701576659219115,0.6916548015083777],"scale":[0.16023534923242233,0.16023534923242277,0.16023534923242272],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/WhalterCatparao.glb"},"animationClip":"Armature|mixamo.com","loop":true},"name":"WhalterCatparao.glb","order":9.91298056231974},"9f7911be-c2d3-4494-b00a-0bfdbb528168":{"id":"9f7911be-c2d3-4494-b00a-0bfdbb528168","position":[0.6474458328172452,-0.17162021004049322,3.810734173559221e-17],"rotation":[0.7071067811865474,0,0,0.7071067811865476],"scale":[0.38461538461538464,0.38461538461538464,0.38461538461538464],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 1","order":13.457810255242066},"82d25dee-400b-424e-b073-d322eec249d5":{"id":"82d25dee-400b-424e-b073-d322eec249d5","position":[0.36076923076923056,-0.3807692307692306,8.454775341376188e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 2","order":14.577194199066478},"cefb34db-f1a9-4330-9a30-c293e7081ea3":{"id":"cefb34db-f1a9-4330-9a30-c293e7081ea3","position":[-0.3606108304774588,-0.3807320452380352,8.453949656717868e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 3","order":16.386894735594232},"3ff6362a-77aa-4dff-9b59-1f1c0008b347":{"id":"3ff6362a-77aa-4dff-9b59-1f1c0008b347","position":[-0.650932659174738,-0.15907764183258916,3.532233213312289e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{},"gltfModel":{"src":{"type":"asset","asset":"assets/Pedestal.glb"},"animationClip":"","loop":true},"name":"Pedestal.glb 4","order":17.941517099219258},"4673b2f0-ece2-44f8-bec2-928e6faccb72":{"id":"4673b2f0-ece2-44f8-bec2-928e6faccb72","position":[0.6516865139085489,-0.1714370471180299,1.2346844252184893e-16],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-1":{"id":"comp-open-url-logo-1","name":"open-url-button","parameters":{"url":"https://wa.me/573017384737"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/WhatsappPortafolio.glb"},"animationClip":"InstagramAction","loop":true},"name":"WhatsappPortafolio.glb","order":19.011843134639424},"3c299a20-8977-4ee1-b02f-e4801f6111a3":{"id":"3c299a20-8977-4ee1-b02f-e4801f6111a3","position":[0.36192307692307674,-0.380070862044895,8.439268440627478e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-2":{"id":"comp-open-url-logo-2","name":"open-url-button","parameters":{"url":"https://www.instagram.com/samuel_aguirre22?igsh=eWRubXNxZW0wZW00"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/InstagramPortafolio.glb"},"animationClip":"InstagramAction.001","loop":true},"name":"InstagramPortafolio.glb","order":20.9084820881096},"5299ab2c-1e4c-462e-8dc0-6c66c5461060":{"id":"5299ab2c-1e4c-462e-8dc0-6c66c5461060","position":[-0.36179993794484655,-0.37962053296809967,-0.007805122189030431],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-3":{"id":"comp-open-url-logo-3","name":"open-url-button","parameters":{"url":"https://legendary-sopapillas-2de101.netlify.app/"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/WebPortafolio.glb"},"animationClip":"InstagramAction.002","loop":true},"name":"WebPortafolio.glb","order":22.730054866147196},"e3449b1b-844e-4052-91b6-5f4e62c48d26":{"id":"e3449b1b-844e-4052-91b6-5f4e62c48d26","position":[-0.6494082347277055,-0.1649388359122672,3.662377865693394e-17],"rotation":[0.7071067811865475,0,0,0.7071067811865476],"scale":[0.3846153846153844,0.3846153846153844,0.3846153846153844],"geometry":null,"material":null,"parentId":"cd1f92a2-44f2-4cb1-9dd4-765c44c905f8","components":{"comp-open-url-logo-4":{"id":"comp-open-url-logo-4","name":"open-url-button","parameters":{"url":"https://www.linkedin.com/in/samuel-aguirre-10404737a?utm_source=share_via&utm_content=profile&utm_medium=member_android"}}},"gltfModel":{"src":{"type":"asset","asset":"assets/LinkedinPortafolio.glb"},"animationClip":"InstagramAction.002","loop":true},"name":"LinkedinPortafolio.glb","order":24.368432697627576},"214cee31-11c8-4ce1-bb49-6c715f1a78d9":{"id":"214cee31-11c8-4ce1-bb49-6c715f1a78d9","position":[-2.8539250092822845,1.5236108629367444,-0.8761926111013618],"rotation":[0.1191109501622727,0.379671050126133,-0.016397197487370285,0.9172750989545722],"scale":[2.3000000000000034,1.5812500764929427,1.437500076492944],"geometry":{"type":"plane","width":1,"height":1},"material":{"type":"basic","color":"#FFFFFF","textureSrc":{"type":"asset","asset":"assets/Talos.png"}},"parentId":"88453035-dc0f-486d-868a-8ff7c2fda864","components":{},"name":"Plane (1)","order":7.1937233329494195}},"spaces":{"88453035-dc0f-486d-868a-8ff7c2fda864":{"id":"88453035-dc0f-486d-868a-8ff7c2fda864","name":"Default Space","activeCamera":"a608ddd9-9379-464d-966f-5d8d8674c83c"}},"entrySpaceId":"88453035-dc0f-486d-868a-8ff7c2fda864"}');
       delete sceneData.history;
       delete sceneData.historyVersion;
       ECS.application.init(sceneData);
