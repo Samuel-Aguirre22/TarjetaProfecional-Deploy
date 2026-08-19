@@ -1,0 +1,23 @@
+{
+  "type": "PLANAR",
+  "properties": {
+    "top": 125,
+    "left": 0,
+    "width": 600,
+    "height": 800,
+    "isRotated": true,
+    "originalWidth": 600,
+    "originalHeight": 1050
+  },
+  "imagePath": "image-targets/TarjetaProfecionalQr_luminance.png",
+  "metadata": null,
+  "name": "TarjetaProfecionalQr",
+  "resources": {
+    "originalImage": "TarjetaProfecionalQr_original.png",
+    "croppedImage": "TarjetaProfecionalQr_cropped.png",
+    "thumbnailImage": "TarjetaProfecionalQr_thumbnail.png",
+    "luminanceImage": "TarjetaProfecionalQr_luminance.png"
+  },
+  "created": 1787104987199,
+  "updated": 1787104987199
+}

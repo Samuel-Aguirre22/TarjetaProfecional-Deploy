@@ -4,7 +4,7 @@
       const configureTargets = () => {
         if (window.XR8 && window.XR8.XrController) {
           window.XR8.XrController.configure({
-            imageTargetData: [require(111), require(924)]
+            imageTargetData: [require(111), require(924), require(777)]
           });
         }
       };
@@ -21,6 +21,10 @@
     924(module) {
       "use strict";
       module.exports = JSON.parse('{"type":"PLANAR","properties":{"top":125,"left":0,"width":600,"height":800,"isRotated":true,"originalWidth":600,"originalHeight":1050},"imagePath":"image-targets/TarjetaProfesional_luminance.png","metadata":null,"name":"TarjetaProfesional","resources":{"originalImage":"TarjetaProfesional_original.png","croppedImage":"TarjetaProfesional_cropped.png","thumbnailImage":"TarjetaProfesional_thumbnail.png","luminanceImage":"TarjetaProfesional_luminance.png"},"created":1785943650372,"updated":1785943650372}');
+    },
+    777(module) {
+      "use strict";
+      module.exports = JSON.parse('{"type":"PLANAR","properties":{"top":125,"left":0,"width":600,"height":800,"isRotated":true,"originalWidth":600,"originalHeight":1050},"imagePath":"image-targets/TarjetaProfecionalQr_luminance.png","metadata":null,"name":"TarjetaProfecionalQr","resources":{"originalImage":"TarjetaProfecionalQr_original.png","croppedImage":"TarjetaProfecionalQr_cropped.png","thumbnailImage":"TarjetaProfecionalQr_thumbnail.png","luminanceImage":"TarjetaProfecionalQr_luminance.png"},"created":1787104987199,"updated":1787104987199}');
     }
   };
 
@@ -188,22 +192,16 @@
       for (const [eid, obj] of entityToObject.entries()) {
         if (!obj || obj.visible === false) continue;
 
-        let entityName = "";
-        try {
-          if (ECS.Name && ECS.Name.has(world, eid)) {
-            entityName = ECS.Name.get(world, eid).name || "";
-          }
-        } catch (e) {}
-
         let gltfSrc = "";
         try {
           if (ECS.GltfModel && ECS.GltfModel.has(world, eid)) {
-            gltfSrc = ECS.GltfModel.get(world, eid).url || "";
+            const cursor = ECS.GltfModel.get(world, eid);
+            gltfSrc = cursor.src || cursor.url || "";
           }
         } catch (e) {}
 
         const objName = obj.name || "";
-        const fullId = `${entityName} ${gltfSrc} ${objName}`;
+        const fullId = `${objName} ${gltfSrc}`;
 
         if (
           fullId.toLowerCase().includes("yobailanding") ||
@@ -244,13 +242,8 @@
         },
         add: (world, component) => {
           world.events.addListener(component.eid, ECS.input.UI_CLICK, () => {
-            let entityName = "";
-            try {
-              if (ECS.Name && ECS.Name.has(world, component.eid)) {
-                entityName = ECS.Name.get(world, component.eid).name || "";
-              }
-            } catch (e) {}
-            const url = getUrlFromIdentifier(entityName, component.schema.url);
+            const obj = world.three?.entityToObject?.get(component.eid);
+            const url = getUrlFromIdentifier(obj?.name || "", component.schema.url);
             if (url) safeOpenUrl(url);
           });
         }
@@ -271,13 +264,8 @@
 
           world.events.addListener(world.events.globalId, ECS.input.UI_CLICK, (event) => {
             if (event?.target) {
-              let entityName = "";
-              try {
-                if (ECS.Name && ECS.Name.has(world, event.target)) {
-                  entityName = ECS.Name.get(world, event.target).name || "";
-                }
-              } catch (e) {}
-              const url = getUrlFromIdentifier(entityName);
+              const obj = world.three?.entityToObject?.get(event.target);
+              const url = getUrlFromIdentifier(obj?.name || "");
               if (url) safeOpenUrl(url);
             }
           });
@@ -309,8 +297,9 @@
       lastVideoToggleTime = now;
 
       try {
-        if (ECS.VideoControls && ECS.VideoControls.has(world, planeEid)) {
-          ECS.VideoControls.mutate(world, planeEid, (cursor) => {
+        const VideoControls = ECS.VideoControls;
+        if (VideoControls && VideoControls.has(world, planeEid)) {
+          VideoControls.mutate(world, planeEid, (cursor) => {
             cursor.paused = !cursor.paused;
             console.log(`[video-toggle-button] Video pausado: ${cursor.paused}`);
           });
@@ -343,18 +332,13 @@
           const findVideoPlaneEid = () => {
             const threeState = world.three;
             if (!threeState?.entityToObject) return null;
+            const VideoControls = ECS.VideoControls;
             for (const [eid, obj] of threeState.entityToObject.entries()) {
-              let entityName = "";
-              try {
-                if (ECS.Name && ECS.Name.has(world, eid)) {
-                  entityName = ECS.Name.get(world, eid).name || "";
-                }
-              } catch (e) {}
               const objName = (obj?.name || "").toLowerCase();
               if (
-                entityName.toLowerCase().includes("plane") ||
                 objName.includes("plane") ||
-                (ECS.VideoControls && ECS.VideoControls.has(world, eid))
+                objName.includes("video") ||
+                (VideoControls && VideoControls.has(world, eid))
               ) {
                 return eid;
               }
@@ -364,17 +348,13 @@
 
           world.events.addListener(world.events.globalId, ECS.input.UI_CLICK, (event) => {
             if (event?.target) {
-              let entityName = "";
-              try {
-                if (ECS.Name && ECS.Name.has(world, event.target)) {
-                  entityName = ECS.Name.get(world, event.target).name || "";
-                }
-              } catch (e) {}
+              const obj = world.three?.entityToObject?.get(event.target);
+              const objName = (obj?.name || "").toLowerCase();
               if (
-                entityName.toLowerCase().includes("button") ||
-                entityName.toLowerCase().includes("icon") ||
-                entityName.toLowerCase().includes("text") ||
-                entityName.toLowerCase().includes("plane")
+                objName.includes("button") ||
+                objName.includes("icon") ||
+                objName.includes("text") ||
+                objName.includes("plane")
               ) {
                 const planeEid = findVideoPlaneEid();
                 if (planeEid) toggleVideoPlayback(world, planeEid);
@@ -384,8 +364,9 @@
 
           const onTargetFound = () => {
             const planeEid = findVideoPlaneEid();
-            if (planeEid && ECS.VideoControls && ECS.VideoControls.has(world, planeEid)) {
-              ECS.VideoControls.mutate(world, planeEid, (cursor) => {
+            const VideoControls = ECS.VideoControls;
+            if (planeEid && VideoControls && VideoControls.has(world, planeEid)) {
+              VideoControls.mutate(world, planeEid, (cursor) => {
                 cursor.paused = false;
               });
             }
@@ -393,8 +374,9 @@
 
           const onTargetLost = () => {
             const planeEid = findVideoPlaneEid();
-            if (planeEid && ECS.VideoControls && ECS.VideoControls.has(world, planeEid)) {
-              ECS.VideoControls.mutate(world, planeEid, (cursor) => {
+            const VideoControls = ECS.VideoControls;
+            if (planeEid && VideoControls && VideoControls.has(world, planeEid)) {
+              VideoControls.mutate(world, planeEid, (cursor) => {
                 cursor.paused = true;
               });
             }
@@ -469,19 +451,15 @@
             const threeState = world.three;
             if (!threeState?.entityToObject) return null;
             for (const [eid, obj] of threeState.entityToObject.entries()) {
-              let entityName = "";
-              try {
-                if (ECS.Name && ECS.Name.has(world, eid)) {
-                  entityName = ECS.Name.get(world, eid).name || "";
-                }
-              } catch (e) {}
               let gltfSrc = "";
               try {
                 if (ECS.GltfModel && ECS.GltfModel.has(world, eid)) {
-                  gltfSrc = ECS.GltfModel.get(world, eid).url || "";
+                  const cursor = ECS.GltfModel.get(world, eid);
+                  gltfSrc = cursor.src || cursor.url || "";
                 }
               } catch (e) {}
-              const fullId = `${entityName} ${gltfSrc} ${obj?.name || ""}`.toLowerCase();
+              const objName = (obj?.name || "").toLowerCase();
+              const fullId = `${objName} ${gltfSrc}`;
               if (fullId.includes("yobailanding") || fullId.includes("avatar") || fullId.includes("bailanding")) {
                 return eid;
               }
